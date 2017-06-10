@@ -1,0 +1,1 @@
+Analysis conducted using Duolingo's [half-life regression](https://github.com/duolingo/halflife-regression) data.
