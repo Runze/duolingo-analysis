@@ -124,7 +124,7 @@ duo_train_exerciese_per_user_session = duo_train %>%
   mutate(prior_exercises = lag(cumsum(exercises)),
          prior_no_mistake = lag(cumsum(no_mistake) / cumsum(exercises)))
 
-# for users that are observed for the first time, impute success rate with global avearge per language
+### for users that are observed for the first time, impute success rate with global avearge per language
 duo_train_exerciese_per_user_session = duo_train_exerciese_per_user_session %>%
   group_by(learning_language) %>%
   mutate(prc_no_mistake_global = sum(no_mistake) / sum(exercises),
@@ -199,3 +199,22 @@ eda_lang_plt =
   better_theme()
 
 ggsave(eda_lang_plt, file = 'plots/eda_lang_plt.png', width = 8, height = 6, dpi = 400)
+
+## `lexeme_string`
+### parse out `surface_form` and `lemma`
+duo_train = duo_train %>%
+  mutate(surface_form_lemma = sub('^(.*?)<.+$', '\\1', lexeme_string)) %>%
+  separate(surface_form_lemma, into = c('surface_form', 'lemma'), sep = '/')
+
+### compute similarity between `surface_form` and `lemma`
+duo_train_surface_form_lemma = duo_train %>%
+  select(surface_form, lemma) %>%
+  rowwise() %>%
+  mutate(similarity_w_lemma = as.numeric(1 - adist(surface_form, lemma) / max(nchar(surface_form), nchar(lemma)))) %>%
+  ungroup()
+
+### for wildcards, assume `surface_form` is the same as `lemma`
+duo_train_surface_form_lemma = duo_train_surface_form_lemma %>%
+  mutate(similarity_w_lemma = ifelse(is.na(similarity_w_lemma), 1, similarity_w_lemma))
+
+duo_train$similarity_w_lemma = duo_train_surface_form_lemma$similarity_w_lemma
