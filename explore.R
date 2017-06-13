@@ -203,18 +203,56 @@ ggsave(eda_lang_plt, file = 'plots/eda_lang_plt.png', width = 8, height = 6, dpi
 ## `lexeme_string`
 ### parse out `surface_form` and `lemma`
 duo_train = duo_train %>%
-  mutate(surface_form_lemma = sub('^(.*?)<.+$', '\\1', lexeme_string)) %>%
+  mutate(surface_form_lemma = sub('^(.*?/.*?)<.+$', '\\1', lexeme_string)) %>%
   separate(surface_form_lemma, into = c('surface_form', 'lemma'), sep = '/')
+
+### for `surface_form` wildcards, assume it is the same as `lemma`
+duo_train = duo_train %>%
+  mutate(surface_form = ifelse(grepl('<.+>', surface_form), lemma, surface_form))
+
+### compute the length of `surface_form` and `lemma`
+duo_train = duo_train %>%
+  mutate(surface_form_len = nchar(surface_form),
+         lemma_len = nchar(lemma))
 
 ### compute similarity between `surface_form` and `lemma`
 duo_train_surface_form_lemma = duo_train %>%
-  select(surface_form, lemma) %>%
+  select(starts_with('surface_form'), starts_with('lemma')) %>%
   rowwise() %>%
-  mutate(similarity_w_lemma = as.numeric(1 - adist(surface_form, lemma) / max(nchar(surface_form), nchar(lemma)))) %>%
+  mutate(similarity_w_lemma = as.numeric(1 - adist(surface_form, lemma) / max(surface_form_len, lemma_len))) %>%
   ungroup()
 
-### for wildcards, assume `surface_form` is the same as `lemma`
-duo_train_surface_form_lemma = duo_train_surface_form_lemma %>%
-  mutate(similarity_w_lemma = ifelse(is.na(similarity_w_lemma), 1, similarity_w_lemma))
-
 duo_train$similarity_w_lemma = duo_train_surface_form_lemma$similarity_w_lemma
+
+### plot `no_mistake` with `similarity_w_lemma` and `surface_form_len`
+duo_train_lng = duo_train %>%
+  mutate(similarity_w_lemma_grp = cut2(similarity_w_lemma, cuts = seq(0, 1, .1)),
+         surface_form_len_grp = cut2(surface_form_len, cuts = 1:10)) %>%
+  gather(variable, value, similarity_w_lemma_grp, surface_form_len_grp, factor_key = T) %>%
+  group_by(variable, value) %>%
+  summarise(n = n(),
+            no_mistake = sum(no_mistake)) %>%
+  group_by(variable, value) %>%
+  nest() %>%
+  mutate(binom_test = map(data, function(df) tidy(binom.test(df$no_mistake, df$n)))) %>%
+  unnest()
+
+# order cuts
+duo_train_lng = duo_train_lng %>%
+  group_by(variable) %>%
+  arrange(parse_number(value))
+
+duo_train_lng$value = factor(duo_train_lng$value, levels = duo_train_lng$value)
+
+eda_by_similarity_w_lemma_and_surface_len_plt =
+  ggplot(duo_train_lng, aes(x = value, y = estimate)) +
+  geom_col(alpha = .5) +
+  facet_grid(~ variable, scales = 'free') +
+  geom_errorbar(aes(ymin = conf.low, ymax = conf.high)) +
+  ggtitle('Chances of making no mistake ~ similarity between the surface form and the lemma and the length of the surface form') +
+  better_theme() %+replace%
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+
+ggsave(eda_by_similarity_w_lemma_and_surface_len_plt, file = 'plots/eda_by_similarity_w_lemma_and_surface_len_plt.png', width = 12, height = 7, dpi = 400)
+
+write_feather(duo_train, 'duo_train.feather')
