@@ -255,4 +255,70 @@ eda_by_similarity_w_lemma_and_surface_len_plt =
 
 ggsave(eda_by_similarity_w_lemma_and_surface_len_plt, file = 'plots/eda_by_similarity_w_lemma_and_surface_len_plt.png', width = 12, height = 7, dpi = 400)
 
+### compute similarity among `surface_form` themselves
+surface_form_similarity = duo_train %>%
+  select(learning_language, surface_form) %>%
+  distinct() %>%
+  group_by(learning_language) %>%
+  nest() %>%
+  mutate(similarity = map(data, function(df) {
+    df_pairs = crossing(df$surface_form, df$surface_form)
+    names(df_pairs) = c('surface_form', 'surface_form_other')
+    
+    df_pairs %>%
+      filter(surface_form != surface_form_other) %>%
+      rowwise() %>%
+      mutate(similarity = as.numeric(1 - adist(surface_form, surface_form_other) / max(nchar(surface_form), nchar(surface_form_other)))) %>%
+      group_by(surface_form) %>%
+      summarise(max_similarity_w_other_words = max(similarity))
+  })) %>%
+  unnest(similarity)
+
+duo_train = duo_train %>%
+  inner_join(surface_form_similarity)
+
+### plot `no_mistake` with `max_similarity_w_other_words`
+duo_train_by_similarity_w_other_words = duo_train %>%
+  mutate(max_similarity_w_other_words_grp = cut2(max_similarity_w_other_words, g = 5)) %>%
+  group_by(max_similarity_w_other_words_grp) %>%
+  summarise(n = n(),
+            no_mistake = sum(no_mistake)) %>%
+  group_by(max_similarity_w_other_words_grp) %>%
+  nest() %>%
+  mutate(binom_test = map(data, function(df) tidy(binom.test(df$no_mistake, df$n)))) %>%
+  unnest()
+
+### compute similarity between the word one is learning and those that are in one's native language
+surface_forms = duo_train %>%
+  select(learning_language, surface_form) %>%
+  distinct()
+
+surface_forms_cross = surface_forms %>%
+  crossing(surface_forms)
+
+names(surface_forms_cross)[3:4] = c('ui_language', 'ui_surface_form')
+
+surface_forms_cross = surface_forms_cross %>%
+  filter(learning_language != ui_language)
+
+surface_forms_cross = surface_forms_cross %>%
+  rowwise() %>%
+  mutate(similarity_w_ui = as.numeric(1 - adist(surface_form, ui_surface_form) / max(nchar(surface_form), nchar(ui_surface_form)))) %>%
+  group_by(learning_language, surface_form, ui_language) %>%
+  summarise(max_similarity_w_ui = max(similarity_w_ui))
+
+duo_train = duo_train %>%
+  inner_join(surface_forms_cross)
+
+### plot `no_mistake` with `max_similarity_w_ui`
+duo_train_by_similarity_w_ui = duo_train %>%
+  mutate(max_similarity_w_ui_grp = cut2(max_similarity_w_ui, g = 10)) %>%
+  group_by(max_similarity_w_ui_grp) %>%
+  summarise(n = n(),
+            no_mistake = sum(no_mistake)) %>%
+  group_by(max_similarity_w_ui_grp) %>%
+  nest() %>%
+  mutate(binom_test = map(data, function(df) tidy(binom.test(df$no_mistake, df$n)))) %>%
+  unnest()
+
 write_feather(duo_train, 'duo_train.feather')
