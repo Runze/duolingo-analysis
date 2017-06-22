@@ -203,12 +203,70 @@ ggsave(eda_lang_plt, file = 'plots/eda_lang_plt.png', width = 8, height = 6, dpi
 ## `lexeme_string`
 ### parse out `surface_form` and `lemma`
 duo_train = duo_train %>%
-  mutate(surface_form_lemma = sub('^(.*?/.*?)<.+$', '\\1', lexeme_string)) %>%
-  separate(surface_form_lemma, into = c('surface_form', 'lemma'), sep = '/')
+  mutate(surface_form_lemma_pos = sub('^(.*?/.*?<.*?)>.*$', '\\1', lexeme_string),
+         surface_form_lemma_pos = gsub('<([^*]*)$', ';\\1', surface_form_lemma_pos)) %>%
+  separate(surface_form_lemma_pos, into = c('surface_form', 'lemma', 'pos'), sep = '/|;', remove = F) %>%
+  mutate(pos = ifelse(grepl('@', pos), 'missing', pos))
 
 ### for `surface_form` wildcards, assume it is the same as `lemma`
 duo_train = duo_train %>%
   mutate(surface_form = ifelse(grepl('<.+>', surface_form), lemma, surface_form))
+
+### compute no mistake rate per word
+surface_forms = duo_train %>%
+  group_by(learning_language, surface_form_lemma_pos) %>%
+  summarise(n = n(),
+            no_mistake = sum(no_mistake)) %>%
+  mutate(prc_no_mistake = no_mistake / n)
+
+### nest by language and fit a beta prior per language
+surface_forms_ns_by_lang = surface_forms %>%
+  group_by(learning_language) %>%
+  nest() %>%
+  mutate(prior = map(data, fit_beta_prior))
+
+### extract the fit plots
+surface_forms_ns_by_lang = surface_forms_ns_by_lang %>%
+  mutate(prior_fit_plt = map2(prior, learning_language, function(prior, lang) {
+    prior$fit_plt +
+      ggtitle(paste('Learning language:', lang))
+  }))
+
+png(file = 'plots/eda_no_mistake_per_word_prior_fit_plt.png', units = 'in', width = 12, height = 8, res = 400)
+do.call('grid.arrange', c(surface_forms_ns_by_lang$prior_fit_plt, nrow = 2))
+dev.off()
+
+### apply the prior to the data to estimate the posterior no mistake rate
+surface_forms_ns_by_lang = surface_forms_ns_by_lang %>%
+  mutate(data = map2(data, prior, function(df, prior) augment(prior$prior, df)))
+
+### find the easiest and hardest words per language
+surface_forms = surface_forms_ns_by_lang %>%
+  unnest(data)
+
+surface_forms_top = surface_forms %>%
+  group_by(learning_language) %>%
+  mutate(rk_asc = row_number(.fitted),
+         rk_desc = row_number(desc(.fitted))) %>%
+  filter(rk_asc <= 10 | rk_desc <= 10) %>%
+  mutate(difficulty = ifelse(rk_asc <= 10, 'Top 10 hardest', 'Top 10 easiest')) %>%
+  arrange(learning_language, rk_asc)
+
+surface_forms_top$surface_form_lemma_pos = factor(surface_forms_top$surface_form_lemma_pos, levels = surface_forms_top$surface_form_lemma_pos)
+
+eda_easiest_hardest_words_plt =
+  ggplot(surface_forms_top, aes(x = .fitted, y = surface_form_lemma_pos, colour = difficulty)) +
+  geom_point() +
+  facet_wrap(~ learning_language, scales = 'free_y') +
+  geom_errorbarh(aes(xmin = .low, xmax = .high)) +
+  xlab('Estimated no mistake rate') +
+  ggtitle('Top 10 easiest and hardest words per language') +
+  better_theme()
+
+ggsave(eda_easiest_hardest_words_plt, file = 'plots/eda_easiest_hardest_words_plt.png', width = 14, height = 10, dpi = 400)
+
+### analyze what correlates with a word's no mistake rate
+#### 
 
 ### compute the length of `surface_form` and `lemma`
 duo_train = duo_train %>%
