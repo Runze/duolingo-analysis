@@ -164,7 +164,7 @@ ggsave(eda_prior_per_user_plt, file = 'plots/eda_prior_per_user_plt.png', width 
 ### `learning_language` ~ users
 duo_train_exercises_per_user_lang = duo_train %>%
   group_by(learning_language, user_id) %>%
-  summarise(n = )
+  summarise(n = n())
 
 duo_train_users_per_lang = duo_train_exercises_per_user_lang %>%
   summarise(users = n())
@@ -187,18 +187,62 @@ png(file = 'plots/eda_lang_vs_users_plt.png', units = 'in', width = 12, height =
 grid.arrange(eda_users_per_lang_plt, eda_exercises_per_user_lang_plt, nrow = 1)
 dev.off()
 
-### `no_mistake` ~ `learning_language`
-duo_train_by_lang = duo_train %>%
-  group_by(learning_language) %>%
-  summarise(prc_no_mistake = mean(no_mistake))
+### `learning_language` ~ `ui_language`
+duo_train_learning_ui_lang = duo_train %>%
+  group_by(learning_language, ui_language) %>%
+  summarise(users = n_distinct(user_id))
 
-eda_lang_plt =
-  ggplot(duo_train_by_lang, aes(x = learning_language, y = prc_no_mistake)) +
+eda_leanring_ui_lang_plt =
+  ggplot(duo_train_learning_ui_lang, aes(x = learning_language, y = ui_language, fill = users)) +
+  geom_tile() +
+  scale_fill_distiller(type = 'seq', palette = 'Blues', direction = 1) +
+  coord_fixed() +
+  ggtitle('Learning language vs. UI language') +
+  better_theme() %+replace%
+  # theme(legend.key.width = unit(1, 'cm'))
+  theme(legend.text = element_text(size = 10))
+
+ggsave(eda_leanring_ui_lang_plt, file = 'plots/eda_leanring_ui_lang_plt.png', width = 8, height = 6, dpi = 400)
+
+### `no_mistake` in learning English ~ `ui_language`
+duo_train_learning_en = duo_train %>%
+  filter(learning_language == 'en') %>%
+  group_by(ui_language) %>%
+  summarise(n = n(),
+            no_mistake = sum(no_mistake)) %>%
+  group_by(ui_language) %>%
+  nest() %>%
+  mutate(binom_test = map(data, function(df) tidy(binom.test(df$no_mistake, df$n)))) %>%
+  unnest()
+
+eda_learning_en_plt =
+  ggplot(duo_train_learning_en, aes(x = ui_language, y = estimate)) +
   geom_col(alpha = .5) +
-  ggtitle('Chances of making no mistake ~ learning language') +
+  geom_errorbar(aes(ymin = conf.low, ymax = conf.high)) +
+  ggtitle('Chances of making no mistake in learning English') +
   better_theme()
 
-ggsave(eda_lang_plt, file = 'plots/eda_lang_plt.png', width = 8, height = 6, dpi = 400)
+### `no_mistake` ~ `learning_language` by English speakers
+duo_train_ui_en = duo_train %>%
+  filter(ui_language == 'en') %>%
+  group_by(learning_language) %>%
+  summarise(n = n(),
+            no_mistake = sum(no_mistake)) %>%
+  group_by(learning_language) %>%
+  nest() %>%
+  mutate(binom_test = map(data, function(df) tidy(binom.test(df$no_mistake, df$n)))) %>%
+  unnest()
+
+eda_ui_en_plt =
+  ggplot(duo_train_ui_en, aes(x = learning_language, y = estimate)) +
+  geom_col(alpha = .5) +
+  geom_errorbar(aes(ymin = conf.low, ymax = conf.high)) +
+  ggtitle('Chances of making no mistake by English speakers') +
+  better_theme()
+
+png(file = 'plots/eda_learning_en_and_ui_en_plt.png', units = 'in', width = 12, height = 6, res = 400)
+grid.arrange(eda_learning_en_plt, eda_ui_en_plt, nrow = 1)
+dev.off()
 
 ## `lexeme_string`
 ### parse out `surface_form` and `lemma`
@@ -214,7 +258,7 @@ duo_train = duo_train %>%
 
 ### compute no mistake rate per word
 surface_forms = duo_train %>%
-  group_by(learning_language, surface_form_lemma_pos) %>%
+  group_by(learning_language, surface_form_lemma_pos, surface_form, lemma, pos) %>%
   summarise(n = n(),
             no_mistake = sum(no_mistake)) %>%
   mutate(prc_no_mistake = no_mistake / n)
@@ -266,117 +310,87 @@ eda_easiest_hardest_words_plt =
 ggsave(eda_easiest_hardest_words_plt, file = 'plots/eda_easiest_hardest_words_plt.png', width = 14, height = 10, dpi = 400)
 
 ### analyze what correlates with a word's no mistake rate
-#### 
-
-### compute the length of `surface_form` and `lemma`
-duo_train = duo_train %>%
+#### the length of `surface_form`
+surface_forms = surface_forms %>%
+  group_by(learning_language) %>%
   mutate(surface_form_len = nchar(surface_form),
-         lemma_len = nchar(lemma))
+         surface_form_len_grp = cut2(surface_form_len, g = 10))
 
-### compute similarity between `surface_form` and `lemma`
-duo_train_surface_form_lemma = duo_train %>%
-  select(starts_with('surface_form'), starts_with('lemma')) %>%
-  rowwise() %>%
-  mutate(similarity_w_lemma = as.numeric(1 - adist(surface_form, lemma) / max(surface_form_len, lemma_len))) %>%
-  ungroup()
+surface_forms = order_factors(surface_forms, var = 'surface_form_len_grp')
 
-duo_train$similarity_w_lemma = duo_train_surface_form_lemma$similarity_w_lemma
-
-### plot `no_mistake` with `similarity_w_lemma` and `surface_form_len`
-duo_train_lng = duo_train %>%
-  mutate(similarity_w_lemma_grp = cut2(similarity_w_lemma, cuts = seq(0, 1, .1)),
-         surface_form_len_grp = cut2(surface_form_len, cuts = 1:10)) %>%
-  gather(variable, value, similarity_w_lemma_grp, surface_form_len_grp, factor_key = T) %>%
-  group_by(variable, value) %>%
-  summarise(n = n(),
-            no_mistake = sum(no_mistake)) %>%
-  group_by(variable, value) %>%
-  nest() %>%
-  mutate(binom_test = map(data, function(df) tidy(binom.test(df$no_mistake, df$n)))) %>%
-  unnest()
-
-# order cuts
-duo_train_lng = duo_train_lng %>%
-  group_by(variable) %>%
-  arrange(parse_number(value))
-
-duo_train_lng$value = factor(duo_train_lng$value, levels = duo_train_lng$value)
-
-eda_by_similarity_w_lemma_and_surface_len_plt =
-  ggplot(duo_train_lng, aes(x = value, y = estimate)) +
-  geom_col(alpha = .5) +
-  facet_grid(~ variable, scales = 'free') +
-  geom_errorbar(aes(ymin = conf.low, ymax = conf.high)) +
-  ggtitle('Chances of making no mistake ~ similarity between the surface form and the lemma and the length of the surface form') +
+eda_by_surface_form_len_plt =
+  ggplot(surface_forms, aes(x = surface_form_len_grp, y = .fitted)) +
+  geom_boxplot() +
+  facet_grid(~ learning_language, scales = 'free_x') +
+  ylab('no mistake rate adjusted by empirical Bayes') +
+  ggtitle('Chances of making no mistake ~ length of the surface form') +
   better_theme() %+replace%
   theme(axis.text.x = element_text(angle = 90, hjust = 1))
 
-ggsave(eda_by_similarity_w_lemma_and_surface_len_plt, file = 'plots/eda_by_similarity_w_lemma_and_surface_len_plt.png', width = 12, height = 7, dpi = 400)
+ggsave(eda_by_surface_form_len_plt, file = 'plots/eda_by_surface_form_len_plt.png', width = 12, height = 6, dpi = 400)
 
-### compute similarity among `surface_form` themselves
-surface_form_similarity = duo_train %>%
-  select(learning_language, surface_form) %>%
-  distinct() %>%
-  group_by(learning_language) %>%
-  nest() %>%
-  mutate(similarity = map(data, function(df) {
-    df_pairs = crossing(df$surface_form, df$surface_form)
-    names(df_pairs) = c('surface_form', 'surface_form_other')
-    
-    df_pairs %>%
-      filter(surface_form != surface_form_other) %>%
-      rowwise() %>%
-      mutate(similarity = as.numeric(1 - adist(surface_form, surface_form_other) / max(nchar(surface_form), nchar(surface_form_other)))) %>%
-      group_by(surface_form) %>%
-      summarise(max_similarity_w_other_words = max(similarity))
-  })) %>%
-  unnest(similarity)
+#### similarity between `surface_form` and `lemma`
+surface_forms = surface_forms %>%
+  mutate(surface_form_eq_lemma = surface_form == lemma)
 
-duo_train = duo_train %>%
-  inner_join(surface_form_similarity)
+mean(surface_forms$surface_form_eq_lemma)  # 74%
 
-### plot `no_mistake` with `max_similarity_w_other_words`
-duo_train_by_similarity_w_other_words = duo_train %>%
-  mutate(max_similarity_w_other_words_grp = cut2(max_similarity_w_other_words, g = 5)) %>%
-  group_by(max_similarity_w_other_words_grp) %>%
-  summarise(n = n(),
-            no_mistake = sum(no_mistake)) %>%
-  group_by(max_similarity_w_other_words_grp) %>%
-  nest() %>%
-  mutate(binom_test = map(data, function(df) tidy(binom.test(df$no_mistake, df$n)))) %>%
-  unnest()
+eda_surface_form_eq_lemma_plt =
+  ggplot(surface_forms, aes(x = surface_form_eq_lemma, y = .fitted)) +
+  geom_boxplot() +
+  facet_grid(~ learning_language, scales = 'free_x') +
+  labs(x = '`surface_form` is the same as `lemma`', y = 'no mistake rate adjusted by empirical Bayes') +
+  ggtitle('Chances of making no mistake ~ similarity between `surface_form` and `lemma`') +
+  better_theme()
 
-### compute similarity between the word one is learning and those that are in one's native language
-surface_forms = duo_train %>%
-  select(learning_language, surface_form) %>%
-  distinct()
+ggsave(eda_surface_form_eq_lemma_plt, file = 'plots/eda_surface_form_eq_lemma_plt.png', width = 12, height = 6, dpi = 400)
 
-surface_forms_cross = surface_forms %>%
-  crossing(surface_forms)
+#### similarity among `surface_form` themselves
+# surface_forms_similarity = surface_forms %>%
+#   group_by(learning_language) %>%
+#   nest() %>%
+#   mutate(similarity_among_surface_forms = map(data, function(df) {
+#     df_pairs = crossing(df$surface_form, df$surface_form)
+#     names(df_pairs) = c('surface_form', 'surface_form_other')
+#     
+#     df_pairs %>%
+#       filter(surface_form != surface_form_other) %>%
+#       rowwise() %>%
+#       mutate(similarity = as.numeric(1 - adist(surface_form, surface_form_other) / max(nchar(surface_form), nchar(surface_form_other)))) %>%
+#       group_by(surface_form) %>%
+#       summarise(max_similarity_w_other_words = max(similarity))
+#   })) %>%
+#   unnest(similarity_among_surface_forms)
+# 
+# surface_forms = surface_forms %>%
+#   inner_join(surface_forms_similarity)
+# 
+# surface_forms = surface_forms %>%
+#   group_by(learning_language) %>%
+#   mutate(max_similarity_w_other_words_grp = cut2(max_similarity_w_other_words, g = 10))
+# 
+# surface_forms = order_factors(surface_forms, var = 'max_similarity_w_other_words_grp')
+# 
+# eda_by_surface_form_w_other_words_plt =
+#   ggplot(surface_forms, aes(x = max_similarity_w_other_words_grp, y = .fitted)) +
+#   geom_boxplot() +
+#   facet_grid(~ learning_language, scales = 'free_x') +
+#   ylab('no mistake rate adjusted by empirical Bayes') +
+#   ggtitle('Chances of making no mistake ~ similarity with the other words') +
+#   better_theme() %+replace%
+#   theme(axis.text.x = element_text(angle = 90, hjust = 1))
 
-names(surface_forms_cross)[3:4] = c('ui_language', 'ui_surface_form')
+#### POS
+eda_by_pos_plt =
+  ggplot(surface_forms, aes(x = pos, y = .fitted)) +
+  geom_boxplot(position = 'identity') +
+  facet_grid(~ learning_language) +
+  coord_flip() +
+  ylab('no mistake rate adjusted by empirical Bayes') +
+  ggtitle('Chances of making no mistake ~ part-of-speech tagging') +
+  better_theme() %+replace%
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
 
-surface_forms_cross = surface_forms_cross %>%
-  filter(learning_language != ui_language)
-
-surface_forms_cross = surface_forms_cross %>%
-  rowwise() %>%
-  mutate(similarity_w_ui = as.numeric(1 - adist(surface_form, ui_surface_form) / max(nchar(surface_form), nchar(ui_surface_form)))) %>%
-  group_by(learning_language, surface_form, ui_language) %>%
-  summarise(max_similarity_w_ui = max(similarity_w_ui))
-
-duo_train = duo_train %>%
-  inner_join(surface_forms_cross)
-
-### plot `no_mistake` with `max_similarity_w_ui`
-duo_train_by_similarity_w_ui = duo_train %>%
-  mutate(max_similarity_w_ui_grp = cut2(max_similarity_w_ui, g = 10)) %>%
-  group_by(max_similarity_w_ui_grp) %>%
-  summarise(n = n(),
-            no_mistake = sum(no_mistake)) %>%
-  group_by(max_similarity_w_ui_grp) %>%
-  nest() %>%
-  mutate(binom_test = map(data, function(df) tidy(binom.test(df$no_mistake, df$n)))) %>%
-  unnest()
+ggsave(eda_by_pos_plt, file = 'plots/eda_by_pos_plt.png', width = 12, height = 6, dpi = 400)
 
 write_feather(duo_train, 'duo_train.feather')

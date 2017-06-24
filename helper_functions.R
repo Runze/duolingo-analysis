@@ -56,3 +56,15 @@ fit_beta_prior = function(df) {
   
   return_values
 }
+
+#### order factor levels
+order_factors = function(df, var) {
+  df = df %>%
+    mutate_('order_var' = var) %>%
+    arrange(parse_number(order_var))
+  
+  df[[var]] = factor(df[[var]], levels = unique(df$order_var))
+  
+  df %>%
+    select(-order_var)
+}
