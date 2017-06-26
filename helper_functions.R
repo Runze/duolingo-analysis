@@ -23,11 +23,14 @@ better_theme = function() {
 }
 
 ### fit a beta prior to each language's rate of no mistake
-fit_beta_prior = function(df) {
-  # filter to words with at least 50 occurrences
+fit_beta_prior = function(df, x = 'no_mistake', n = 'n') {
+  # filter to subjects (e.g., users, words) with at least 50 occurrences
   # (based on EDA, this is enough to create a smooth distribution)
   df = df %>%
-    filter(n >= 50)
+    mutate_('no_mistake' = x,
+            'n' = n) %>%
+    filter(n >= 50) %>%
+    mutate(prc_no_mistake = no_mistake / n)
   
   return_values = list()
   
@@ -51,7 +54,6 @@ fit_beta_prior = function(df) {
     geom_histogram(aes(x = prc_no_mistake, y = ..density..), alpha = .5) +
     stat_function(fun = function(x) dbeta(x, return_values$prior$parameters$alpha, return_values$prior$parameters$beta), colour = 'red', size = 1) +
     annotate(geom = 'text', x = 0, y = 0, label = label, hjust = 0, vjust = 0) +
-    xlab('No mistake rate per word (where occurrences >= 50)') +
     better_theme()
   
   return_values
