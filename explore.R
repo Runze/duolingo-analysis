@@ -349,41 +349,6 @@ eda_surface_form_eq_lemma_plt =
 
 ggsave(eda_surface_form_eq_lemma_plt, file = 'plots/eda_surface_form_eq_lemma_plt.png', width = 12, height = 6, dpi = 400)
 
-#### similarity among `surface_form` themselves
-# surface_forms_similarity = surface_forms %>%
-#   group_by(learning_language) %>%
-#   nest() %>%
-#   mutate(similarity_among_surface_forms = map(data, function(df) {
-#     df_pairs = crossing(df$surface_form, df$surface_form)
-#     names(df_pairs) = c('surface_form', 'surface_form_other')
-#     
-#     df_pairs %>%
-#       filter(surface_form != surface_form_other) %>%
-#       rowwise() %>%
-#       mutate(similarity = as.numeric(1 - adist(surface_form, surface_form_other) / max(nchar(surface_form), nchar(surface_form_other)))) %>%
-#       group_by(surface_form) %>%
-#       summarise(max_similarity_w_other_words = max(similarity))
-#   })) %>%
-#   unnest(similarity_among_surface_forms)
-# 
-# surface_forms = surface_forms %>%
-#   inner_join(surface_forms_similarity)
-# 
-# surface_forms = surface_forms %>%
-#   group_by(learning_language) %>%
-#   mutate(max_similarity_w_other_words_grp = cut2(max_similarity_w_other_words, g = 10))
-# 
-# surface_forms = order_factors(surface_forms, var = 'max_similarity_w_other_words_grp')
-# 
-# eda_by_surface_form_w_other_words_plt =
-#   ggplot(surface_forms, aes(x = max_similarity_w_other_words_grp, y = .fitted)) +
-#   geom_boxplot() +
-#   facet_grid(~ learning_language, scales = 'free_x') +
-#   ylab('no mistake rate adjusted by empirical Bayes') +
-#   ggtitle('Chances of making no mistake ~ similarity with the other words') +
-#   better_theme() %+replace%
-#   theme(axis.text.x = element_text(angle = 90, hjust = 1))
-
 #### POS
 eda_by_pos_plt =
   ggplot(surface_forms, aes(x = pos, y = .fitted)) +
