@@ -362,4 +362,65 @@ eda_by_pos_plt =
 
 ggsave(eda_by_pos_plt, file = 'plots/eda_by_pos_plt.png', width = 12, height = 6, dpi = 400)
 
+## `history_seen` and `history_correct`
+### nest by language and fit a beta prior per language
+duo_train_history_ns_by_lang = duo_train %>%
+  group_by(learning_language) %>%
+  nest() %>%
+  mutate(prior = map(data, function(df) fit_beta_prior(df, x = 'history_correct', n = 'history_seen')))
+
+### extract the fit plots
+duo_train_history_ns_by_lang = duo_train_history_ns_by_lang %>%
+  mutate(prior_fit_plt = map2(prior, learning_language, function(prior, lang) {
+    prior$fit_plt +
+      xlab('Historical correct rate per word\n(where number of observations >= 50)') +
+      ggtitle(paste('Learning language:', lang))
+  }))
+
+png(file = 'plots/eda_history_correct_rate_prior_fit_plt.png', units = 'in', width = 12, height = 8, res = 400)
+do.call('grid.arrange', c(duo_train_history_ns_by_lang$prior_fit_plt, nrow = 2))
+dev.off()
+
+### extract the alpha and beta estimates and save for future use
+history_correct_rate_beta_params = duo_train_history_ns_by_lang %>%
+  mutate(beta_params = map(prior, function(df) df$prior$parameters)) %>%
+  unnest(beta_params) %>%
+  select(learning_language, alpha, beta) %>%
+  rename(history_correct_rate_alpha = alpha,
+         history_correct_rate_beta = beta)
+
+write_csv(history_correct_rate_beta_params, 'history_correct_rate_beta_params.csv')
+
+### compute posterior estimates of historical correct rate
+duo_train = duo_train %>%
+  inner_join(history_correct_rate_beta_params) %>%
+  mutate(history_correct_rate = (history_correct + history_correct_rate_alpha) / (history_seen + history_correct_rate_alpha + history_correct_rate_beta))
+
+### compare the current success rate with the historical one
+duo_train_lng = duo_train %>%
+  mutate(history_seen_grp = cut2(history_seen, g = 10),
+         history_correct_rate_grp = cut2(history_correct_rate, g = 10)) %>%
+  gather(variable, value, history_seen_grp, history_correct_rate_grp, factor_key = T) %>%
+  group_by(variable, value) %>%
+  summarise(n = n(),
+            no_mistake = sum(no_mistake)) %>%
+  group_by(variable, value) %>%
+  nest() %>%
+  mutate(binom_test = map(data, function(df) tidy(binom.test(df$no_mistake, df$n)))) %>%
+  unnest()
+
+duo_train_lng = order_factors(duo_train_lng, var = 'value')
+levels(duo_train_lng$variable) = c('Number of times the user has seen the word\n(in deciles)', 'Historical correct rate\n(adjusted by Empirical Bayes; in deciles)')
+
+eda_history_correct_plt =
+  ggplot(duo_train_lng, aes(x = value, y = estimate)) +
+  geom_col(alpha = .5) +
+  facet_grid(~ variable, scales = 'free') +
+  geom_errorbar(aes(ymin = conf.low, ymax = conf.high)) +
+  ggtitle('Chances of making no mistake ~ number of times the user has seen the word and the historical correct rate') +
+  better_theme() %+replace%
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+
+ggsave(eda_history_correct_plt, file = 'plots/eda_history_correct_plt.png', width = 12, height = 7, dpi = 400)
+
 write_feather(duo_train, 'duo_train.feather')
