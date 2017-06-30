@@ -6,6 +6,7 @@ library(broom)
 library(lubridate)
 library(ggbeeswarm)
 library(ebbr)
+library(caret)
 library(tidyverse)
 options(stringsAsFactors = F)
 

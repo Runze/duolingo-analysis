@@ -96,16 +96,16 @@ duo_train_per_user_per_session = duo_train %>%
   summarise(n = n(),
             no_mistake = sum(no_mistake)) %>%
   arrange(learning_language, user_id, timestamp) %>%
-  mutate(prior_n = lag(cumsum(n)),
-         prior_no_mistake = lag(cumsum(no_mistake)),
-         prior_n = ifelse(is.na(prior_n), 0, prior_n),
-         prior_no_mistake = ifelse(is.na(prior_no_mistake), 0, prior_no_mistake))
+  mutate(prior_exercises_per_user = lag(cumsum(n)),
+         prior_no_mistake_per_user = lag(cumsum(no_mistake)),
+         prior_exercises_per_user = ifelse(is.na(prior_exercises_per_user), 0, prior_exercises_per_user),
+         prior_no_mistake_per_user = ifelse(is.na(prior_no_mistake_per_user), 0, prior_no_mistake_per_user))
 
 ### nest by language and fit a beta prior per language
 duo_train_per_user_per_session_ns_by_lang = duo_train_per_user_per_session %>%
   group_by(learning_language) %>%
   nest() %>%
-  mutate(prior = map(data, function(df) fit_beta_prior(df, x = 'prior_no_mistake', n = 'prior_n')))
+  mutate(prior = map(data, function(df) fit_beta_prior(df, x = 'prior_no_mistake_per_user', n = 'prior_exercises_per_user')))
 
 ### extract the fit plots
 duo_train_per_user_per_session_ns_by_lang = duo_train_per_user_per_session_ns_by_lang %>%
@@ -132,16 +132,16 @@ write_csv(prior_no_mistake_beta_params, 'prior_no_mistake_beta_params.csv')
 ### compute posterior estimates of prior no mistake rate
 duo_train_per_user_per_session = duo_train_per_user_per_session %>%
   inner_join(prior_no_mistake_beta_params) %>%
-  mutate(prior_no_mistake_rate = (prior_no_mistake + prior_no_mistake_alpha) / (prior_n + prior_no_mistake_alpha + prior_no_mistake_beta))
+  mutate(prior_no_mistake_rate_per_user = (prior_no_mistake_per_user + prior_no_mistake_alpha) / (prior_exercises_per_user + prior_no_mistake_alpha + prior_no_mistake_beta))
 
 ### compare the current success rate with the prior history
 duo_train = duo_train %>%
-  inner_join(duo_train_per_user_per_session %>% select(learning_language, user_id, timestamp, prior_n, prior_no_mistake_rate))
+  inner_join(duo_train_per_user_per_session %>% select(learning_language, user_id, timestamp, prior_exercises_per_user, prior_no_mistake_rate_per_user))
 
 duo_train_lng = duo_train %>%
-  mutate(prior_n_grp = cut2(prior_n, g = 10),
-         prior_no_mistake_rate_grp = cut2(prior_no_mistake_rate, g = 10)) %>%
-  gather(variable, value, prior_n_grp, prior_no_mistake_rate_grp, factor_key = T) %>%
+  mutate(prior_exercises_per_user_grp = cut2(prior_exercises_per_user, g = 10),
+         prior_no_mistake_rate_per_user_grp = cut2(prior_no_mistake_rate_per_user, g = 10)) %>%
+  gather(variable, value, prior_exercises_per_user_grp, prior_no_mistake_rate_per_user_grp, factor_key = T) %>%
   group_by(variable, value) %>%
   summarise(n = n(),
             no_mistake = sum(no_mistake)) %>%
@@ -150,7 +150,7 @@ duo_train_lng = duo_train %>%
   mutate(binom_test = map(data, function(df) tidy(binom.test(df$no_mistake, df$n)))) %>%
   unnest()
 
-levels(duo_train_lng$variable) = c('Number of prior exercises\n(in deciles)', 'Prior chances of making no mistake\n(adjusted by Empirical Bayes; in deciles)')
+levels(duo_train_lng$variable) = c('Number of prior exercises per user\n(in deciles)', 'Prior chances of making no mistake per user\n(adjusted by Empirical Bayes; in deciles)')
 
 eda_prior_per_user_plt =
   ggplot(duo_train_lng, aes(x = value, y = estimate)) +
@@ -361,6 +361,11 @@ eda_by_pos_plt =
   theme(axis.text.x = element_text(angle = 90, hjust = 1))
 
 ggsave(eda_by_pos_plt, file = 'plots/eda_by_pos_plt.png', width = 12, height = 6, dpi = 400)
+
+## compute the same metrics on training data
+duo_train = duo_train %>%
+  mutate(surface_form_len = nchar(surface_form),
+         surface_form_eq_lemma = surface_form == lemma)
 
 ## `history_seen` and `history_correct`
 ### nest by language and fit a beta prior per language
