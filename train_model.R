@@ -7,6 +7,7 @@ duo_train = read_feather('duo_train.feather')
 ## transform variables if necessary
 duo_train = duo_train %>%
   mutate(log_delta_days = log(delta_days + 1),
+         log_prior_exercises_per_user = log(prior_exercises_per_user + 1),
          log_history_seen = log(history_seen),
          ui_learning_language = paste(ui_language, learning_language, sep = '_'))
 
@@ -24,7 +25,7 @@ duo_train = duo_train %>%
 ## define features
 features = c(
   'log_delta_days',
-  'prior_exercises_per_user',
+  'log_prior_exercises_per_user',
   'prior_no_mistake_rate_per_user',
   'ui_learning_language',
   'surface_form_len',
@@ -43,6 +44,10 @@ duo_train_ds = duo_train %>%
 # create model matrix
 duo_train_X = model.matrix(no_mistake ~ ., data = duo_train_ds[, c('no_mistake', features)])[, -1]
 duo_train_Y = make.names(duo_train_ds$no_mistake)
+
+# check for highly correlated variables
+high_corr = findCorrelation(cor(duo_train_X))
+# none found
 
 # train models
 ## 5-fold cv
@@ -68,3 +73,24 @@ duo_train_gbm = train(x = duo_train_X, y = duo_train_Y,
 
 # summarize model coefficients
 duo_train_logit_coefs = tidy(duo_train_logit$finalModel)
+
+duo_train_logit_coefs = duo_train_logit_coefs %>%
+  mutate(conf.low = estimate - 1.96 * std.error,
+         conf.high = estimate + 1.96 * std.error) %>%
+  arrange(abs(statistic))
+
+# clean up names for dummy variables
+duo_train_logit_coefs$term = gsub('language', 'language_', duo_train_logit_coefs$term)
+duo_train_logit_coefs$term = gsub('binned', 'binned_', duo_train_logit_coefs$term)
+
+duo_train_logit_coefs$term = factor(duo_train_logit_coefs$term, levels = duo_train_logit_coefs$term)
+
+train_logit_coefs_plt =
+  ggplot(duo_train_logit_coefs, aes(x = estimate, y = term)) +
+  geom_point() +
+  geom_errorbarh(aes(xmin = conf.low, xmax = conf.high)) +
+  geom_vline(xintercept = 0, linetype = 'longdash', alpha = .5) +
+  ggtitle('Summary of coefficient estimates per logistic regression', 'Dependent variable: making no mistake on a given word in the current session\nIndependent variables ranked by their statistical significance') +
+  better_theme()
+
+ggsave(train_logit_coefs_plt, file = 'plots/train_logit_coefs_plt.png', width = 10, height = 9, dpi = 400)
