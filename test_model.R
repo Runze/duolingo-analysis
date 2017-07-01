@@ -138,22 +138,22 @@ png(file = 'plots/test_logit_auc_plt.png', units = 'in', width = 11, height = 6,
 grid.arrange(duo_test_model_metrics_roc_plt, duo_test_model_metrics_pr_plt, nrow = 1)
 dev.off()
 
-## plot F1 score per threshold
+## plot metrics per threshold
 ### reshape to long
 duo_test_model_metrics_lng = duo_test_model_metrics %>%
-  select(threshold, sensitivity, precision, f1) %>%
+  select(threshold, sensitivity, specificity, precision, f1) %>%
   gather(variable, value, -threshold, factor_key = T)
 
-duo_test_model_metrics_f1_plt =
+duo_test_model_metrics_per_threshold_plt =
   ggplot(duo_test_model_metrics_lng, aes(x = threshold, y = value, colour = variable)) +
-  geom_point() +
-  ggtitle('Precision and recall per threshold') +
+  geom_point(alpha = .7) +
+  ggtitle('Sensitivity, specificity, precision and F1 per threshold') +
   better_theme() %+replace%
-  theme(legend.position = c(.03, .03), legend.justification = c(0, 0))
+  theme(legend.position = c(.03, .07), legend.justification = c(0, 0))
 
 ### illustrate alongside the distribution of predicted probabilities
-png(file = 'plots/test_logit_f1_plt.png', units = 'in', width = 12, height = 6, res = 400)
-grid.arrange(duo_test_model_metrics_f1_plt, duo_test_pred_prob_plt, nrow = 1)
+png(file = 'plots/test_logit_metrics_per_threshold_plt.png', units = 'in', width = 12, height = 6, res = 400)
+grid.arrange(duo_test_model_metrics_per_threshold_plt, duo_test_pred_prob_plt, nrow = 1)
 dev.off()
 
 write_feather(duo_test, 'duo_test.feather')
