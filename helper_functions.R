@@ -23,9 +23,9 @@ better_theme = function() {
     )
 }
 
-### fit a beta prior to each language's rate of no mistake
+### function to fit a beta prior to each language's rate of no mistake
 fit_beta_prior = function(df, x = 'no_mistake', n = 'n') {
-  # filter to subjects (e.g., users, words) with at least 50 occurrences
+  # filter to subjects (e.g., words, users) with at least 50 occurrences
   # (based on EDA, this is enough to create a smooth distribution)
   df = df %>%
     mutate_('no_mistake' = x,

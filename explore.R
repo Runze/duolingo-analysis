@@ -311,7 +311,7 @@ eda_easiest_hardest_words_plt =
   ggtitle('Top 10 easiest and hardest words per language') +
   better_theme()
 
-ggsave(eda_easiest_hardest_words_plt, file = 'plots/eda_easiest_hardest_words_plt.png', width = 14, height = 10, dpi = 400)
+ggsave(eda_easiest_hardest_words_plt, file = 'plots/eda_easiest_hardest_words_plt.png', width = 14, height = 12, dpi = 400)
 
 ### analyze what correlates with a word's no mistake rate
 #### the length of `surface_form`
