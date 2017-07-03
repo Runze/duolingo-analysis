@@ -84,6 +84,7 @@ eda_delta_plt =
   geom_ribbon(aes(ymin = conf.low, ymax = conf.high), alpha = .4) +
   coord_cartesian(xlim = c(0, 30)) +
   geom_vline(xintercept = 1, alpha = .5, linetype = 'longdash') +
+  scale_x_continuous(breaks = c(0, 1, seq(10, 30, 10)), minor_breaks = seq(5, 30, 5)) +
   ggtitle('Chances of making no mistake ~ days since last time the word was seen') +
   better_theme()
 
@@ -294,15 +295,15 @@ surface_forms = surface_forms_ns_by_lang %>%
 
 surface_forms_top = surface_forms %>%
   group_by(learning_language) %>%
-  mutate(rk_asc = row_number(.fitted),
-         rk_desc = row_number(desc(.fitted))) %>%
+  mutate(rk_asc = row_number(.high),
+         rk_desc = row_number(desc(.low))) %>%
   filter(rk_asc <= 10 | rk_desc <= 10) %>%
   mutate(difficulty = ifelse(rk_asc <= 10, 'Top 10 hardest', 'Top 10 easiest')) %>%
   arrange(learning_language, rk_asc)
 
 surface_forms_top$surface_form_lemma_pos = factor(surface_forms_top$surface_form_lemma_pos, levels = surface_forms_top$surface_form_lemma_pos)
 
-eda_easiest_hardest_words_plt =
+# eda_easiest_hardest_words_plt =
   ggplot(surface_forms_top, aes(x = .fitted, y = surface_form_lemma_pos, colour = difficulty)) +
   geom_point() +
   facet_wrap(~ learning_language, scales = 'free_y') +
